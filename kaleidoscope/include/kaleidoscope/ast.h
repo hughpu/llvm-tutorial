@@ -12,6 +12,15 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/Passes/PassBuilder.h>
+#include <llvm/Passes/StandardInstrumentations.h>
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/Reassociate.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include <kaleidoscope/kaleidoscopejit.h>
 
 
 namespace kaleidoscope
@@ -20,6 +29,15 @@ extern std::unique_ptr<llvm::LLVMContext> TheContext;
 extern std::unique_ptr<llvm::IRBuilder<>> Builder;
 extern std::unique_ptr<llvm::Module> TheModule;
 extern std::map<std::string, llvm::Value*> NamedValues;
+extern std::unique_ptr<llvm::FunctionPassManager> TheFPM;
+extern std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
+extern std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
+extern std::unique_ptr<llvm::CGSCCAnalysisManager> TheCGAM;
+extern std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
+extern std::unique_ptr<llvm::PassInstrumentationCallbacks> ThePIC;
+extern std::unique_ptr<llvm::StandardInstrumentations> TheSI;
+extern std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+
 
 class ExprAST
 {
@@ -103,7 +121,7 @@ extern std::map<char, int> binop_precedence;
 void MainLoop();
 int GetNextToken();
 int GetTokPrecedence();
-void InitializeModule();
+void InitializeModuleAndPassManagers();
 void HandleDefinition();
 void HandleExtern();
 void HandleTopLevelExpression();

@@ -11,7 +11,7 @@ add_definitions(${LLVM_DEFINITIONS})
 include_directories(${LLVM_INCLUDE_DIRS})
 
 # Map LLVM components to library names
-llvm_map_components_to_libnames(LLVM_LIBS core support)
+llvm_map_components_to_libnames(LLVM_LIBS core native orcjit)
 message(STATUS "LLVM_LIBS: ${LLVM_LIBS}")
 message(STATUS "LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 message(STATUS "LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")

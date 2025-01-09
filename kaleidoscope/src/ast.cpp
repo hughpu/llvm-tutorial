@@ -6,6 +6,15 @@ namespace kaleidoscope
 std::unique_ptr<llvm::LLVMContext> TheContext;
 std::unique_ptr<llvm::IRBuilder<>> Builder;
 std::unique_ptr<llvm::Module> TheModule;
+std::unique_ptr<llvm::FunctionPassManager> TheFPM;
+std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
+std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
+std::unique_ptr<llvm::CGSCCAnalysisManager> TheCGAM;
+std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
+std::unique_ptr<llvm::PassInstrumentationCallbacks> ThePIC;
+std::unique_ptr<llvm::StandardInstrumentations> TheSI;
+std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+
 std::map<std::string, llvm::Value*> NamedValues;
 int cur_token;
 std::map<char, int> binop_precedence = {
@@ -283,6 +292,8 @@ llvm::Function* FunctionAST::codegen()
         
         llvm::verifyFunction(*the_func);
         
+        TheFPM->run(*the_func, *TheFAM);
+        
         return the_func;
     }
     
@@ -290,11 +301,35 @@ llvm::Function* FunctionAST::codegen()
     return nullptr;
 }
 
-void InitializeModule()
+void InitializeModuleAndPassManagers()
 {
+    llvm::ExitOnError ExitOnErr;
+    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
     TheContext = std::make_unique<llvm::LLVMContext>();
     TheModule = std::make_unique<llvm::Module>("my first jit", *TheContext);
+    TheModule->setDataLayout(TheJIT->getDataLayout());
+
     Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+    
+    TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
+    TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
+    TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
+    TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
+    ThePIC = std::make_unique<llvm::PassInstrumentationCallbacks>();
+
+    fprintf(stderr, "hitting ast 319");
+    TheSI = std::make_unique<llvm::StandardInstrumentations>(true);
+    TheSI->registerCallbacks(*ThePIC, TheFAM.get());
+    
+    TheFPM->addPass(llvm::InstCombinePass());
+    TheFPM->addPass(llvm::ReassociatePass());
+    TheFPM->addPass(llvm::GVNPass());
+    TheFPM->addPass(llvm::SimplifyCFGPass());
+
+    llvm::PassBuilder pb;
+    pb.registerModuleAnalyses(*TheMAM);
+    pb.registerFunctionAnalyses(*TheFAM);
+    pb.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
 }
 
 void HandleDefinition()

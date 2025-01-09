@@ -3,7 +3,7 @@
 
 int main()
 {
-    kaleidoscope::InitializeModule();
+    kaleidoscope::InitializeModuleAndPassManagers();
 
     fprintf(stderr, "ready> ");
     kaleidoscope::GetNextToken();
