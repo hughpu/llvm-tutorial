@@ -14,6 +14,8 @@ std::unique_ptr<llvm::ModuleAnalysisManager> TheMAM;
 std::unique_ptr<llvm::PassInstrumentationCallbacks> ThePIC;
 std::unique_ptr<llvm::StandardInstrumentations> TheSI;
 std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
+std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
+llvm::ExitOnError ExitOnErr;
 
 std::map<std::string, llvm::Value*> NamedValues;
 int cur_token;
@@ -228,9 +230,18 @@ llvm::Value* BinaryExprAST::codegen()
     }
 }
 
+llvm::Function* getFunction(std::string name)
+{
+    if (auto *f = TheModule->getFunction(name)) return f;
+    auto fi = FunctionProtos.find(name);
+    if (fi != FunctionProtos.end()) return fi->second->codegen();
+    
+    return nullptr;
+}
+
 llvm::Value* CallExprAST::codegen()
 {
-    llvm::Function *callee_f = TheModule->getFunction(callee_);
+    llvm::Function *callee_f = getFunction(callee_);
     if (!callee_f) return LogErrorV(("Unknown function name: " + callee_).c_str());
     
     if (callee_f->arg_size() != args_.size()) return LogErrorV("Incorrect # arguments passed");
@@ -265,7 +276,9 @@ llvm::Function* PrototypeAST::codegen()
 
 llvm::Function* FunctionAST::codegen()
 {
-    llvm::Function *the_func = TheModule->getFunction(proto_->name());
+    auto &p = *proto_;
+    FunctionProtos[p.name()] = std::move(proto_); 
+    llvm::Function *the_func = getFunction(p.name());
 
     if (!the_func)
     {
@@ -303,8 +316,6 @@ llvm::Function* FunctionAST::codegen()
 
 void InitializeModuleAndPassManagers()
 {
-    llvm::ExitOnError ExitOnErr;
-    TheJIT = ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
     TheContext = std::make_unique<llvm::LLVMContext>();
     TheModule = std::make_unique<llvm::Module>("my first jit", *TheContext);
     TheModule->setDataLayout(TheJIT->getDataLayout());
@@ -341,6 +352,9 @@ void HandleDefinition()
             fprintf(stderr, "Read function definition:");
             fn_ir->print(llvm::errs());
             fprintf(stderr, "\n");
+            ExitOnErr(TheJIT->addModule(
+                llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext))));
+            InitializeModuleAndPassManagers();
         }
     } else {
         GetNextToken();
@@ -349,13 +363,14 @@ void HandleDefinition()
 
 void HandleExtern()
 {
-    if (auto fn_ast = ParseExtern())
+    if (auto proto_ast = ParseExtern())
     {
-        if (auto *fn_ir = fn_ast->codegen())
+        if (auto *fn_ir = proto_ast->codegen())
         {
             fprintf(stderr, "Read extern:");
             fn_ir->print(llvm::errs());
             fprintf(stderr, "\n");
+            FunctionProtos[proto_ast->name()] = std::move(proto_ast); 
         }
     } else {
         GetNextToken();
@@ -366,12 +381,19 @@ void HandleTopLevelExpression()
 {
     if (auto fn_ast = ParseTopLevelExpr())
     {
-        if (auto *fn_ir = fn_ast->codegen())
+        if (fn_ast->codegen())
         {
-            fprintf(stderr, "Read top-level expression:");
-            fn_ir->print(llvm::errs());
-            fprintf(stderr, "\n");
-            fn_ir->eraseFromParent();
+            auto resource_tracker = TheJIT->getMainJITDylib().createResourceTracker();
+            auto thread_safe_module = llvm::orc::ThreadSafeModule(std::move(TheModule), std::move(TheContext));
+            ExitOnErr(TheJIT->addModule(std::move(thread_safe_module), resource_tracker));
+            InitializeModuleAndPassManagers();
+            
+            auto expr_symbol = ExitOnErr(TheJIT->lookup("__anon_expr"));
+            assert(expr_symbol && "Function not found");
+            
+            double (*func_ptr)() = reinterpret_cast<double (*)()>(expr_symbol.getAddress());
+            fprintf(stderr, "Evaluated to %f\n", func_ptr());
+            ExitOnErr(resource_tracker->remove());
         }
     } else {
         GetNextToken();

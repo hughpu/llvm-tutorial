@@ -11,7 +11,7 @@ add_definitions(${LLVM_DEFINITIONS})
 include_directories(${LLVM_INCLUDE_DIRS})
 
 # Map LLVM components to library names
-llvm_map_components_to_libnames(LLVM_LIBS Core native OrcJIT Support Passes Object)
+llvm_map_components_to_libnames(LLVM_LIBS Core native OrcJIT Support Passes Object RuntimeDyld TransformUtils)
 message(STATUS "LLVM_LIBS: ${LLVM_LIBS}")
 message(STATUS "LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 message(STATUS "LLVM_DEFINITIONS: ${LLVM_DEFINITIONS}")

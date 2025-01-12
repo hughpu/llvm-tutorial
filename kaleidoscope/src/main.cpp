@@ -9,10 +9,11 @@ int main()
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
 
-    kaleidoscope::InitializeModuleAndPassManagers();
-
     fprintf(stderr, "ready> ");
     kaleidoscope::GetNextToken();
+
+    kaleidoscope::TheJIT = kaleidoscope::ExitOnErr(llvm::orc::KaleidoscopeJIT::Create());
+    kaleidoscope::InitializeModuleAndPassManagers();
 
     kaleidoscope::MainLoop();
     
