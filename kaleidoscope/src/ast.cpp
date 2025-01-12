@@ -311,13 +311,13 @@ void InitializeModuleAndPassManagers()
 
     Builder = std::make_unique<llvm::IRBuilder<>>(*TheContext);
     
+    TheFPM = std::make_unique<llvm::FunctionPassManager>();
     TheFAM = std::make_unique<llvm::FunctionAnalysisManager>();
     TheLAM = std::make_unique<llvm::LoopAnalysisManager>();
     TheCGAM = std::make_unique<llvm::CGSCCAnalysisManager>();
     TheMAM = std::make_unique<llvm::ModuleAnalysisManager>();
     ThePIC = std::make_unique<llvm::PassInstrumentationCallbacks>();
 
-    fprintf(stderr, "hitting ast 319");
     TheSI = std::make_unique<llvm::StandardInstrumentations>(true);
     TheSI->registerCallbacks(*ThePIC, TheFAM.get());
     
