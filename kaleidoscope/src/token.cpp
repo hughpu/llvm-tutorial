@@ -16,6 +16,9 @@ int GetToken()
         
         if (identitfier_str == "def") return TOK_DEF;
         if (identitfier_str == "extern") return TOK_EXTERN;
+        if (identitfier_str == "if") return TOK_IF;
+        if (identitfier_str == "then") return TOK_THEN;
+        if (identitfier_str == "else") return TOK_ELSE;
         return TOK_IDENTIFIER;
     }
     

@@ -105,6 +105,7 @@ std::unique_ptr<ExprAST> ParsePrimary()
         case TOK_NUMBER: return ParseNumberExpr();
         case TOK_IDENTIFIER: return ParseIndentifierExpr();
         case '(': return ParseParenExpr();
+        case TOK_IF: return ParseIfExpr();
     }
 }
 
@@ -188,6 +189,28 @@ std::unique_ptr<FunctionAST> ParseTopLevelExpr()
     return nullptr;
 }
 
+std::unique_ptr<ExprAST> ParseIfExpr()
+{
+    GetNextToken(); 
+    
+    auto cond = ParseExpression();
+    if (!cond) return nullptr;
+    
+    if (cur_token != TOK_THEN) return LogError("expected then");
+    GetNextToken(); 
+    
+    auto then = ParseExpression();
+    if (!then) return nullptr;
+    
+    if (cur_token != TOK_ELSE) return LogError("expected else");
+    GetNextToken();
+
+    auto else_ = ParseExpression();
+    if (!else_) return nullptr;
+    
+    return std::make_unique<IfExprAST>(std::move(cond), std::move(then), std::move(else_));
+}
+
 llvm::Value* LogErrorV(const char* Str)
 {
     fprintf(stderr, "Error: %s\n", Str);
@@ -226,7 +249,7 @@ llvm::Value* BinaryExprAST::codegen()
             lhs_val = Builder->CreateFCmpULT(lhs_val, rhs_val, "cmptmp");
             return Builder->CreateUIToFP(lhs_val, llvm::Type::getDoubleTy(*TheContext), "booltmp");
         default:
-            return LogErrorV("invalid binary operator: " + op_);
+            return LogErrorV("invalid binary operator");
     }
 }
 
@@ -313,6 +336,52 @@ llvm::Function* FunctionAST::codegen()
     the_func->eraseFromParent();
     return nullptr;
 }
+
+llvm::Value *IfExprAST::codegen()
+{
+    llvm::Value *cond_val = cond_->codegen();
+    if (!cond_val)
+    {
+        return nullptr;
+    }
+    
+    cond_val = Builder->CreateFCmpONE(cond_val, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)), "ifcond");
+    
+    llvm::Function *the_func = Builder->GetInsertBlock()->getParent();
+    llvm::BasicBlock *then_block = llvm::BasicBlock::Create(*TheContext, "then", the_func);
+    llvm::BasicBlock *else_block = llvm::BasicBlock::Create(*TheContext, "else");
+    llvm::BasicBlock *merge_block = llvm::BasicBlock::Create(*TheContext, "ifcont");
+    
+    Builder->CreateCondBr(cond_val, then_block, else_block);
+    
+    Builder->SetInsertPoint(then_block);
+    auto then_val = then_->codegen();
+    if (!then_val) {
+        return nullptr;
+    }
+    
+    Builder->CreateBr(merge_block);
+    then_block = Builder->GetInsertBlock();
+    
+    the_func->getBasicBlockList().insert(the_func->end(), else_block);
+    Builder->SetInsertPoint(else_block);
+    auto else_val = else_->codegen();
+    if (!else_val) {
+        return nullptr;
+    }
+    
+    Builder->CreateBr(merge_block);
+    else_block = Builder->GetInsertBlock();
+    
+    the_func->getBasicBlockList().insert(the_func->end(), merge_block);
+    Builder->SetInsertPoint(merge_block);
+    
+    llvm::PHINode *PN = Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, "iftmp");
+    PN->addIncoming(then_val, then_block);
+    PN->addIncoming(else_val, else_block);
+    return PN;
+}
+
 
 void InitializeModuleAndPassManagers()
 {

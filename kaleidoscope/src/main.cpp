@@ -2,6 +2,7 @@
 #include <kaleidoscope/token.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
+#include <immintrin.h>
 
 int main()
 {

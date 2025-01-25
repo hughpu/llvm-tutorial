@@ -13,6 +13,7 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Verifier.h>
 #include <llvm/IR/PassManager.h>
+#include <llvm/IR/Instructions.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/StandardInstrumentations.h>
 #include "llvm/Transforms/InstCombine/InstCombine.h"
@@ -102,6 +103,16 @@ private:
     std::unique_ptr<ExprAST> body_;
 };
 
+class IfExprAST : public ExprAST
+{
+public:
+    IfExprAST(std::unique_ptr<ExprAST> cond, std::unique_ptr<ExprAST> then, std::unique_ptr<ExprAST> else_)
+        : cond_(std::move(cond)), then_(std::move(then)), else_(std::move(else_)) {}
+    llvm::Value* codegen() override;
+private:
+    std::unique_ptr<ExprAST> cond_, then_, else_;
+};
+
 
 extern int cur_token;
 extern std::map<char, int> binop_precedence;
@@ -125,6 +136,7 @@ std::unique_ptr<PrototypeAST> ParsePrototype();
 std::unique_ptr<FunctionAST> ParseDefinition();
 std::unique_ptr<PrototypeAST> ParseExtern();
 std::unique_ptr<FunctionAST> ParseTopLevelExpr();
+std::unique_ptr<ExprAST> ParseIfExpr();
     
 extern std::unique_ptr<llvm::LLVMContext> TheContext;
 extern std::unique_ptr<llvm::IRBuilder<>> Builder;

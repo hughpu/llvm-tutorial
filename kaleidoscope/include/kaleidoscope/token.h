@@ -12,6 +12,9 @@ enum Token
     TOK_EXTERN = -3,
     TOK_IDENTIFIER = -4,
     TOK_NUMBER = -5,
+    TOK_IF = -6,
+    TOK_THEN = -7,
+    TOK_ELSE = -8,
 };
 
 extern std::string identitfier_str;
