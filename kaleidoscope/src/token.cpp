@@ -19,6 +19,8 @@ int GetToken()
         if (identitfier_str == "if") return TOK_IF;
         if (identitfier_str == "then") return TOK_THEN;
         if (identitfier_str == "else") return TOK_ELSE;
+        if (identitfier_str == "for") return TOK_FOR;
+        if (identitfier_str == "in") return TOK_IN;
         return TOK_IDENTIFIER;
     }
     
