@@ -520,7 +520,8 @@ void InitializeModuleAndPassManagers() {
 
   TheFPM->addPass(llvm::InstCombinePass());
   TheFPM->addPass(llvm::ReassociatePass());
-  TheFPM->addPass(llvm::GVNPass());
+  TheFPM->addPass(llvm::GVNHoistPass());
+  TheFPM->addPass(llvm::GVNSinkPass());
   TheFPM->addPass(llvm::SimplifyCFGPass());
 
   llvm::PassBuilder pb;
