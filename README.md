@@ -6,5 +6,5 @@ following [LLVM Tutorial](https://llvm.org/docs/tutorial/MyFirstLanguageFrontend
 
 # move vstemplate to .vscode and modified it base on host env
 ```shell
-cp vstemplate .vscode
+cp -r vstemplate .vscode
 ```
