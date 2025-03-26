@@ -62,6 +62,18 @@ private:
   std::unique_ptr<ExprAST> rhs_;
 };
 
+class UnaryExprAST : public ExprAST {
+public:
+  UnaryExprAST(char op_code, std::unique_ptr<ExprAST> operand)
+      : op_(op_code), operand_(std::move(operand)) {}
+
+  llvm::Value *codegen() override;
+
+private:
+  char op_;
+  std::unique_ptr<ExprAST> operand_;
+};
+
 class CallExprAST : public ExprAST {
 public:
   CallExprAST(const std::string &callee,
@@ -76,14 +88,26 @@ private:
 
 class PrototypeAST {
 public:
-  PrototypeAST(const std::string &name, std::vector<std::string> args)
-      : name_(name), args_(std::move(args)) {}
+  PrototypeAST(const std::string &name, std::vector<std::string> args,
+               bool is_operator = false, unsigned prec = 0)
+      : name_(name), args_(std::move(args)), is_operator_(is_operator),
+        precedence_(prec) {}
   llvm::Function *codegen();
   std::string name() { return name_; }
+  bool isUnaryOp() const { return is_operator_ && args_.size() == 1; }
+  bool isBinaryOp() const { return is_operator_ && args_.size() == 2; }
+  char getOperatorName() const {
+    assert(isUnaryOp() || isBinaryOp());
+    return name_[name_.size() - 1];
+  }
+  unsigned getPrecedence() const { return precedence_; }
 
 private:
   std::string name_;
   std::vector<std::string> args_;
+
+  bool is_operator_;
+  unsigned precedence_;
 };
 
 class FunctionAST {

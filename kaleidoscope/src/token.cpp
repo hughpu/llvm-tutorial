@@ -21,6 +21,8 @@ int GetToken()
         if (identitfier_str == "else") return TOK_ELSE;
         if (identitfier_str == "for") return TOK_FOR;
         if (identitfier_str == "in") return TOK_IN;
+        if (identitfier_str == "binary") return TOK_BINARY;
+        if (identitfier_str == "unary") return TOK_UNARY;
         return TOK_IDENTIFIER;
     }
     
