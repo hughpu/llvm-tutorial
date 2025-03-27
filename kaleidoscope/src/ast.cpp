@@ -15,7 +15,7 @@ std::unique_ptr<llvm::orc::KaleidoscopeJIT> TheJIT;
 std::map<std::string, std::unique_ptr<PrototypeAST>> FunctionProtos;
 llvm::ExitOnError ExitOnErr;
 
-std::map<std::string, llvm::Value *> NamedValues;
+std::map<std::string, llvm::AllocaInst *> NamedValues;
 int cur_token;
 std::map<char, int> binop_precedence = {
     // {'=', 2},
@@ -332,10 +332,10 @@ llvm::Value *NumberExprAST::codegen() {
 }
 
 llvm::Value *VariableExprAST::codegen() {
-  llvm::Value *V = NamedValues[name_];
-  if (!V)
+  llvm::AllocaInst *A = NamedValues[name_];
+  if (!A)
     return LogErrorV("Unknown variable name");
-  return V;
+  return Builder->CreateLoad(A->getAllocatedType(), A, name_.c_str());
 }
 
 llvm::Value *UnaryExprAST::codegen() {
@@ -447,7 +447,9 @@ llvm::Function *FunctionAST::codegen() {
 
   NamedValues.clear();
   for (auto &arg : the_func->args()) {
-    NamedValues[std::string(arg.getName())] = &arg;
+    llvm::AllocaInst *alloc = CreateEntryBlockAlloca(the_func, arg.getName());
+    Builder->CreateStore(&arg, alloc);
+    NamedValues[std::string(arg.getName())] = alloc;
   }
 
   if (llvm::Value *ret_val = body_->codegen()) {
@@ -513,9 +515,14 @@ llvm::Value *IfExprAST::codegen() {
 }
 
 llvm::Value *ForExprAST::codegen() {
+  llvm::Function *the_func = Builder->GetInsertBlock()->getParent();
+  llvm::AllocaInst *alloca = CreateEntryBlockAlloca(the_func, name_);
+
   llvm::Value *start_val = start_->codegen();
   if (!start_val)
     return nullptr;
+
+  Builder->CreateStore(start_val, alloca);
 
   llvm::BasicBlock *pre_loop_block = Builder->GetInsertBlock();
   llvm::Function *for_scope_func = pre_loop_block->getParent();
@@ -525,13 +532,14 @@ llvm::Value *ForExprAST::codegen() {
   Builder->CreateBr(loop_block);
 
   Builder->SetInsertPoint(loop_block);
-  llvm::PHINode *phi_var =
-      Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, name_);
+  // llvm::PHINode *phi_var =
+  //     Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, name_);
 
-  phi_var->addIncoming(start_val, pre_loop_block);
+  // phi_var->addIncoming(start_val, pre_loop_block);
 
-  llvm::Value *old_name_val = NamedValues[name_];
-  NamedValues[name_] = phi_var;
+  // llvm::AllocaInst *old_name_alloc = NamedValues[name_];
+  // NamedValues[name_] = phi_var;
+  // NamedValues[name_] = alloca;
 
   if (!body_->codegen())
     return nullptr;
@@ -545,7 +553,10 @@ llvm::Value *ForExprAST::codegen() {
     step_val = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
   }
 
-  llvm::Value *next_var = Builder->CreateFAdd(phi_var, step_val, "nextvar");
+  llvm::Value *cur_var =
+      Builder->CreateLoad(alloca->getAllocatedType(), alloca, name_.c_str());
+  llvm::Value *next_var = Builder->CreateFAdd(cur_var, step_val, "nextvar");
+  Builder->CreateStore(next_var, alloca);
 
   llvm::Value *end_cond = end_->codegen();
   if (!end_cond)
@@ -558,15 +569,15 @@ llvm::Value *ForExprAST::codegen() {
   llvm::BasicBlock *after_block =
       llvm::BasicBlock::Create(*TheContext, "afterloop", for_scope_func);
   Builder->CreateCondBr(end_cond, loop_block, after_block);
-  phi_var->addIncoming(next_var, end_block);
+  // phi_var->addIncoming(next_var, end_block);
 
   Builder->SetInsertPoint(after_block);
 
-  if (old_name_val) {
-    NamedValues[name_] = old_name_val;
-  } else {
-    NamedValues.erase(name_);
-  }
+  // if (old_name_val) {
+  //   NamedValues[name_] = old_name_val;
+  // } else {
+  //   NamedValues.erase(name_);
+  // }
 
   return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
 }
@@ -588,6 +599,7 @@ void InitializeModuleAndPassManagers() {
   TheSI = std::make_unique<llvm::StandardInstrumentations>(true);
   TheSI->registerCallbacks(*ThePIC, TheFAM.get());
 
+  TheFPM->addPass(llvm::PromotePass());
   TheFPM->addPass(llvm::InstCombinePass());
   TheFPM->addPass(llvm::ReassociatePass());
   TheFPM->addPass(llvm::GVNHoistPass());
@@ -598,6 +610,14 @@ void InitializeModuleAndPassManagers() {
   pb.registerModuleAnalyses(*TheMAM);
   pb.registerFunctionAnalyses(*TheFAM);
   pb.crossRegisterProxies(*TheLAM, *TheFAM, *TheCGAM, *TheMAM);
+}
+
+llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *the_func,
+                                         llvm::StringRef var_name) {
+  llvm::IRBuilder<> temp_builder(&the_func->getEntryBlock(),
+                                 the_func->getEntryBlock().begin());
+  return temp_builder.CreateAlloca(llvm::Type::getDoubleTy(*TheContext),
+                                   nullptr, var_name);
 }
 
 void HandleDefinition() {

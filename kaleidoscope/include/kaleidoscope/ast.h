@@ -18,6 +18,7 @@
 #include <llvm/Transforms/Scalar/GVN.h>
 #include <llvm/Transforms/Scalar/Reassociate.h>
 #include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/Utils/Mem2Reg.h>
 #include <map>
 #include <memory>
 #include <string>
@@ -177,11 +178,13 @@ std::unique_ptr<FunctionAST> ParseDefinition();
 std::unique_ptr<PrototypeAST> ParseExtern();
 std::unique_ptr<FunctionAST> ParseTopLevelExpr();
 std::unique_ptr<ExprAST> ParseUnary();
+llvm::AllocaInst *CreateEntryBlockAlloca(llvm::Function *the_func,
+                                         llvm::StringRef var_name);
 
 extern std::unique_ptr<llvm::LLVMContext> TheContext;
 extern std::unique_ptr<llvm::IRBuilder<>> Builder;
 extern std::unique_ptr<llvm::Module> TheModule;
-extern std::map<std::string, llvm::Value *> NamedValues;
+extern std::map<std::string, llvm::AllocaInst *> NamedValues;
 extern std::unique_ptr<llvm::FunctionPassManager> TheFPM;
 extern std::unique_ptr<llvm::LoopAnalysisManager> TheLAM;
 extern std::unique_ptr<llvm::FunctionAnalysisManager> TheFAM;
