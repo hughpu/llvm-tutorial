@@ -159,6 +159,8 @@ void InitializeModuleAndPassManagers();
 void HandleDefinition();
 void HandleExtern();
 void HandleTopLevelExpression();
+llvm::Function *getFunction(std::string name);
+
 std::unique_ptr<ExprAST> LogError(const char *str);
 std::unique_ptr<ExprAST> ParseNumberExpr();
 std::unique_ptr<ExprAST> ParseExpression();
@@ -174,6 +176,7 @@ std::unique_ptr<PrototypeAST> ParsePrototype();
 std::unique_ptr<FunctionAST> ParseDefinition();
 std::unique_ptr<PrototypeAST> ParseExtern();
 std::unique_ptr<FunctionAST> ParseTopLevelExpr();
+std::unique_ptr<ExprAST> ParseUnary();
 
 extern std::unique_ptr<llvm::LLVMContext> TheContext;
 extern std::unique_ptr<llvm::IRBuilder<>> Builder;
