@@ -18,7 +18,7 @@ llvm::ExitOnError ExitOnErr;
 std::map<std::string, llvm::AllocaInst *> NamedValues;
 int cur_token;
 std::map<char, int> binop_precedence = {
-    // {'=', 2},
+    {'=', 2},
     // {';', 2},
     {'<', 10},
     {'+', 20},
@@ -356,6 +356,19 @@ llvm::Value *BinaryExprAST::codegen() {
   if (!lhs_val || !rhs_val)
     return nullptr;
 
+  if (op_ == '=') {
+    VariableExprAST *lhs_eq = static_cast<VariableExprAST *>(lhs_.get());
+    if (!lhs_eq) {
+      return LogErrorV("destination of '=' must be variable");
+    }
+    llvm::AllocaInst *lhs_var = NamedValues[lhs_eq->name()];
+    if (!lhs_var) {
+      return LogErrorV("unknown variable name");
+    }
+    Builder->CreateStore(rhs_val, lhs_var);
+    return rhs_val;
+  }
+
   switch (op_) {
   case '+':
     return Builder->CreateFAdd(lhs_val, rhs_val, "addtmp");
@@ -565,7 +578,7 @@ llvm::Value *ForExprAST::codegen() {
       end_cond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
       "loopcond");
 
-  llvm::BasicBlock *end_block = Builder->GetInsertBlock();
+  // llvm::BasicBlock *end_block = Builder->GetInsertBlock();
   llvm::BasicBlock *after_block =
       llvm::BasicBlock::Create(*TheContext, "afterloop", for_scope_func);
   Builder->CreateCondBr(end_cond, loop_block, after_block);
