@@ -109,6 +109,8 @@ std::unique_ptr<ExprAST> ParsePrimary() {
     return ParseIfExpr();
   case TOK_FOR:
     return ParseForExpr();
+  case TOK_VAR:
+    return ParseVarExpr();
   }
 }
 
@@ -273,6 +275,50 @@ std::unique_ptr<ExprAST> ParseIfExpr() {
                                      std::move(else_));
 }
 
+std::unique_ptr<ExprAST> ParseVarExpr() {
+  GetNextToken();
+
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> var_names;
+
+  if (cur_token != TOK_IDENTIFIER)
+    return LogError("expected identifier after var");
+
+  while (true) {
+    std::string name = identitfier_str;
+    GetNextToken();
+
+    std::unique_ptr<ExprAST> init;
+    if (cur_token == '=') {
+      GetNextToken();
+
+      init = ParseExpression();
+      if (!init)
+        return nullptr;
+    }
+
+    var_names.push_back(std::make_pair(name, std::move(init)));
+
+    if (cur_token != ',')
+      break;
+    GetNextToken();
+
+    if (cur_token != TOK_IDENTIFIER) {
+      return LogError("expected identifier list after var");
+    }
+  }
+
+  if (cur_token != TOK_IN)
+    return LogError("expected 'in' keyword after 'var'");
+  GetNextToken();
+
+  auto body = ParseExpression();
+  if (!body) {
+    return nullptr;
+  }
+
+  return std::make_unique<VarExprAST>(std::move(var_names), std::move(body));
+}
+
 // forexpr ::= 'for' identifier '=' start_expr ',' end_expr (',' step_expr)?
 // 'in' body_expr
 std::unique_ptr<ExprAST> ParseForExpr() {
@@ -334,8 +380,47 @@ llvm::Value *NumberExprAST::codegen() {
 llvm::Value *VariableExprAST::codegen() {
   llvm::AllocaInst *A = NamedValues[name_];
   if (!A)
-    return LogErrorV("Unknown variable name");
+    return LogErrorV(("Unknown variable name: " + name_).c_str());
   return Builder->CreateLoad(A->getAllocatedType(), A, name_.c_str());
+}
+
+llvm::Value *VarExprAST::codegen() {
+  std::vector<std::pair<std::string, llvm::AllocaInst *>> old_bindings;
+
+  llvm::Function *the_func = Builder->GetInsertBlock()->getParent();
+
+  for (const auto &var_pair : var_names_) {
+    const std::string &var_name = var_pair.first;
+    ExprAST *init = var_pair.second.get();
+
+    llvm::Value *init_val;
+    if (init) {
+      init_val = init->codegen();
+      if (!init_val)
+        return nullptr;
+    } else {
+      init_val = llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0));
+    }
+
+    llvm::AllocaInst *alloca = CreateEntryBlockAlloca(the_func, var_name);
+    Builder->CreateStore(init_val, alloca);
+
+    if (NamedValues.find(var_name) != NamedValues.end()) {
+      old_bindings.emplace_back(var_name, NamedValues[var_name]);
+    }
+
+    NamedValues[var_name] = alloca;
+  }
+
+  llvm::Value *body_val = body_->codegen();
+  if (!body_val)
+    return nullptr;
+
+  for (const auto &old_binding : old_bindings) {
+    NamedValues[old_binding.first] = old_binding.second;
+  }
+
+  return body_val;
 }
 
 llvm::Value *UnaryExprAST::codegen() {
@@ -528,6 +613,7 @@ llvm::Value *IfExprAST::codegen() {
 }
 
 llvm::Value *ForExprAST::codegen() {
+  // entry
   llvm::Function *the_func = Builder->GetInsertBlock()->getParent();
   llvm::AllocaInst *alloca = CreateEntryBlockAlloca(the_func, name_);
 
@@ -536,24 +622,30 @@ llvm::Value *ForExprAST::codegen() {
     return nullptr;
 
   Builder->CreateStore(start_val, alloca);
+  llvm::AllocaInst *old_name_alloc = NamedValues[name_];
+  NamedValues[name_] = alloca;
 
-  llvm::BasicBlock *pre_loop_block = Builder->GetInsertBlock();
-  llvm::Function *for_scope_func = pre_loop_block->getParent();
   llvm::BasicBlock *loop_block =
-      llvm::BasicBlock::Create(*TheContext, "loop", for_scope_func);
+      llvm::BasicBlock::Create(*TheContext, "loop", the_func);
+  llvm::BasicBlock *after_block =
+      llvm::BasicBlock::Create(*TheContext, "afterloop", the_func);
+  llvm::BasicBlock *pre_block =
+      llvm::BasicBlock::Create(*TheContext, "preloop", the_func);
 
-  Builder->CreateBr(loop_block);
+  // pre
+  Builder->CreateBr(pre_block);
+  Builder->SetInsertPoint(pre_block);
 
+  llvm::Value *end_cond = end_->codegen();
+  if (!end_cond)
+    return nullptr;
+  end_cond = Builder->CreateFCmpONE(
+      end_cond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
+      "loopcond");
+  Builder->CreateCondBr(end_cond, loop_block, after_block);
+
+  // body
   Builder->SetInsertPoint(loop_block);
-  // llvm::PHINode *phi_var =
-  //     Builder->CreatePHI(llvm::Type::getDoubleTy(*TheContext), 2, name_);
-
-  // phi_var->addIncoming(start_val, pre_loop_block);
-
-  // llvm::AllocaInst *old_name_alloc = NamedValues[name_];
-  // NamedValues[name_] = phi_var;
-  // NamedValues[name_] = alloca;
-
   if (!body_->codegen())
     return nullptr;
 
@@ -565,32 +657,20 @@ llvm::Value *ForExprAST::codegen() {
   } else {
     step_val = llvm::ConstantFP::get(*TheContext, llvm::APFloat(1.0));
   }
-
   llvm::Value *cur_var =
       Builder->CreateLoad(alloca->getAllocatedType(), alloca, name_.c_str());
   llvm::Value *next_var = Builder->CreateFAdd(cur_var, step_val, "nextvar");
   Builder->CreateStore(next_var, alloca);
+  Builder->CreateBr(pre_block);
 
-  llvm::Value *end_cond = end_->codegen();
-  if (!end_cond)
-    return nullptr;
-  end_cond = Builder->CreateFCmpONE(
-      end_cond, llvm::ConstantFP::get(*TheContext, llvm::APFloat(0.0)),
-      "loopcond");
-
-  // llvm::BasicBlock *end_block = Builder->GetInsertBlock();
-  llvm::BasicBlock *after_block =
-      llvm::BasicBlock::Create(*TheContext, "afterloop", for_scope_func);
-  Builder->CreateCondBr(end_cond, loop_block, after_block);
-  // phi_var->addIncoming(next_var, end_block);
-
+  // after
   Builder->SetInsertPoint(after_block);
 
-  // if (old_name_val) {
-  //   NamedValues[name_] = old_name_val;
-  // } else {
-  //   NamedValues.erase(name_);
-  // }
+  if (old_name_alloc) {
+    NamedValues[name_] = old_name_alloc;
+  } else {
+    NamedValues.erase(name_);
+  }
 
   return llvm::Constant::getNullValue(llvm::Type::getDoubleTy(*TheContext));
 }

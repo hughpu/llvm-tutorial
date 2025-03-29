@@ -151,6 +151,20 @@ private:
   std::unique_ptr<ExprAST> start_, end_, step_, body_;
 };
 
+class VarExprAST : public ExprAST {
+public:
+  VarExprAST(
+      std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> var_names,
+      std::unique_ptr<ExprAST> body)
+      : var_names_(std::move(var_names)), body_(std::move(body)) {}
+
+  llvm::Value *codegen() override;
+
+private:
+  std::vector<std::pair<std::string, std::unique_ptr<ExprAST>>> var_names_;
+  std::unique_ptr<ExprAST> body_;
+};
+
 extern int cur_token;
 extern std::map<char, int> binop_precedence;
 
@@ -173,6 +187,7 @@ std::unique_ptr<ExprAST> ParseBinOpsRHS(int expr_prec,
                                         std::unique_ptr<ExprAST> lhs);
 std::unique_ptr<ExprAST> ParseIfExpr();
 std::unique_ptr<ExprAST> ParseForExpr();
+std::unique_ptr<ExprAST> ParseVarExpr();
 std::unique_ptr<PrototypeAST> LogErrorP(const char *str);
 std::unique_ptr<PrototypeAST> ParsePrototype();
 std::unique_ptr<FunctionAST> ParseDefinition();
